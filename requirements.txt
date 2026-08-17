@@ -1,0 +1,10 @@
+# Lightweight path: enough for the deterministic CPU fallback and compositing.
+Pillow>=10.0,<12.0
+numpy>=1.26,<3.0
+
+# Optional model backends (install separately when GPU/model downloads are available):
+# rembg[cpu]>=2.0.60
+# diffusers>=0.30.0
+# transformers>=4.45.0
+# accelerate>=0.34.0
+# torch>=2.2.0

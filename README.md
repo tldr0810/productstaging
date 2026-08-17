@@ -1,4 +1,79 @@
-# Cloudflare Worker Starter for Manyfold Agents
+# Product Staging (open-source prototype)
+
+Product Staging turns a plain product photo into a lifestyle scene while keeping
+the product RGB pixels out of the generation step. It is a Python CLI that can
+run entirely on a CPU with its deterministic local fallback, or use open-source
+models when their optional dependencies are installed.
+
+```bash
+python stage.py --input product.png \
+  --prompt "product on a rustic wooden table, soft morning light, shallow depth of field" \
+  --output result.png
+```
+
+The command writes four PNGs beside `result.png`:
+
+- `result.png` — staged scene
+- `result.cutout.png` — original RGB pixels with the predicted alpha
+- `result.mask.png` — binary foreground mask
+- `result.comparison.png` — shareable original/staged side-by-side
+
+## Python setup
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+The base install uses Pillow and NumPy only. For model-backed results, install
+the optional packages that match the machine (CUDA Torch is recommended for a
+GPU), for example:
+
+```bash
+pip install "rembg[cpu]" diffusers transformers accelerate torch
+```
+
+`rembg` (U2Net by default) predicts the cutout mask. A diffusers text-to-image
+pipeline (default `stabilityai/sd-turbo`, configurable with `--scene-model`)
+generates the scene. If either model is unavailable, the CLI prints a warning
+and uses a local simple-background mask or a prompt-aware textured scene so the
+workflow still completes on CPU.
+
+## Fidelity and realism
+
+The input image is converted to RGBA and its RGB channels are reapplied after
+mask inference. The scene model never receives the product, so it cannot invent
+or rewrite a logo, label, shape, or colour. Only geometric scaling and a narrow
+anti-aliased edge ring are applied during compositing. A blurred contact shadow
+is placed behind the product and its direction is inferred from simple prompt
+words such as `left`, `morning`, or `sunset`.
+
+Three deterministic demo pairs are committed in [`examples/`](examples/):
+
+- `mug.comparison.png` — warm wooden desk
+- `serum.comparison.png` — cool marble counter
+- `headphones.comparison.png` — outdoor patio
+
+They use the local fallback so they are reproducible without downloading model
+weights. To produce higher-quality scenes, rerun the same commands after
+installing the optional backends.
+
+## Known limitations
+
+- The fallback mask is intended for white or simple backgrounds; use rembg (or
+  BiRefNet through a compatible rembg session) for hair, reflections, or clutter.
+- Reflective, transparent, translucent, and glass products need a better matte
+  and may show halos. The tool deliberately does not hallucinate missing pixels.
+- Diffusers models are large downloads and need enough VRAM; CPU generation can
+  be very slow. The fallback scene is a development/demo path, not a photoreal
+  replacement for a diffusion model.
+- The product is resized to fit the generated frame (`--product-scale`, default
+  `0.52`); this is the only whole-product transform.
+
+---
+
+## Cloudflare Worker starter
 
 English · [中文](README_CN.md)
 
