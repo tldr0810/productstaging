@@ -89,7 +89,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pip install "rembg[cpu]" diffusers transformers accelerate torch
 STAGING_TOKEN="$(openssl rand -hex 32)"
-STAGING_AUTH_TOKEN="$STAGING_TOKEN" STAGING_SCENE_MODEL="stabilityai/stable-diffusion-xl-base-1.0" PORT=8787 python stage_server.py
+STAGING_AUTH_TOKEN="$STAGING_TOKEN" STAGING_CUTOUT_MODEL="birefnet-general" STAGING_CUTOUT_EDGE="preserve" STAGING_SCENE_MODEL="stabilityai/stable-diffusion-xl-base-1.0" PORT=8787 python stage_server.py
 ```
 
 把同一个 token 写入 Cloudflare Worker secret，并把服务的 HTTPS URL 写入 Worker variable：
@@ -109,7 +109,9 @@ Workers AI 的 SDXL 生成 prompt-aware 背景，部署后结果下方应显示
 网页上的去背质量可以选择 High detail、Balanced 或 Fast preview。High detail
 最多保留 2048px，并只对 alpha 边缘做轻微羽化，不会重绘商品 RGB。复杂边缘请使用
 Python 服务的 `rembg`，并设置 `STAGING_CUTOUT_MODEL=birefnet-general`（CLI 也可传入
-`--cutout-model birefnet-general`）。结果下方的 `Cutout:` 会显示实际使用的去背路径。
+`--cutout-model birefnet-general`）。`STAGING_CUTOUT_EDGE=preserve` 会保留原始 RGB；
+`decontaminate` 用来移除彩色边缘光晕，`alpha_matting` 和 `vitmatte` 会以更高成本改善柔边。
+结果下方的 `Cutout:` 会显示实际使用的去背路径。
 
 一条命令启动全部：Vite 以 HMR 方式服务 React 应用，Worker 运行在 workerd 中并**自动模拟
 本地 D1 数据库** —— schema 在第一个请求时自动创建，永远不需要迁移步骤。

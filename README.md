@@ -42,8 +42,17 @@ GPU), for example:
 pip install "rembg[cpu]" diffusers transformers accelerate torch
 ```
 
-`rembg` (U2Net by default) predicts the cutout mask. A diffusers text-to-image
-pipeline (default `stabilityai/sd-turbo`, configurable with `--scene-model`)
+The first rembg request downloads the selected ONNX weights. For a GPU service,
+use `rembg[gpu]` instead of `rembg[cpu]` and set the cutout model explicitly:
+
+```bash
+STAGING_CUTOUT_MODEL=birefnet-general STAGING_CUTOUT_EDGE=preserve \
+  STAGING_AUTH_TOKEN="$STAGING_TOKEN" PORT=8787 python stage_server.py
+```
+
+`rembg` (BiRefNet general by default, with a u2net compatibility fallback)
+predicts the cutout mask. A diffusers text-to-image pipeline (default
+`stabilityai/sd-turbo`, configurable with `--scene-model`)
 generates the scene. If either model is unavailable, the CLI prints a warning
 and uses a local simple-background mask or a prompt-aware textured scene so the
 workflow still completes on CPU.
@@ -65,7 +74,10 @@ applies only a small alpha feather; it does not rewrite product RGB pixels. Use
 modes are still intended for clean white/simple backgrounds. For difficult edges,
 run the Python service with `rembg` and choose a stronger model, for example
 `STAGING_CUTOUT_MODEL=birefnet-general` (or pass `--cutout-model birefnet-general`
-to the CLI). The returned `Cutout:` backend label tells you which path actually ran.
+to the CLI). `STAGING_CUTOUT_EDGE=preserve` keeps source RGB at every pixel;
+`decontaminate` removes coloured edge halos, while `alpha_matting` and `vitmatte`
+refine soft coverage at higher cost. The returned `Cutout:` backend label tells
+you which path actually ran.
 
 Three deterministic demo pairs are committed in [`examples/`](examples/):
 

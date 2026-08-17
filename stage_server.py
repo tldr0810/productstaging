@@ -13,7 +13,15 @@ from typing import Any
 
 from PIL import Image
 
-from stage import composite_product, comparison_image, cutout_product, generate_scene, _scene_size
+from stage import (
+    DEFAULT_CUTOUT_EDGE,
+    DEFAULT_CUTOUT_MODEL,
+    composite_product,
+    comparison_image,
+    cutout_product,
+    generate_scene,
+    _scene_size,
+)
 
 
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
@@ -47,8 +55,9 @@ def run_stage(payload: dict[str, Any]) -> dict[str, Any]:
     scale = float(payload.get("productScale", 0.52))
     if not 0.1 <= scale <= 1.0:
         raise ValueError("productScale must be between 0.1 and 1.0")
-    cutout_model = str(payload.get("cutoutModel", os.getenv("STAGING_CUTOUT_MODEL", "u2net")))
-    cutout, binary_mask, cutout_backend = cutout_product(original, cutout_model)
+    cutout_model = str(payload.get("cutoutModel", DEFAULT_CUTOUT_MODEL))
+    cutout_edge = str(payload.get("cutoutEdge", os.getenv("STAGING_CUTOUT_EDGE", DEFAULT_CUTOUT_EDGE)))
+    cutout, binary_mask, cutout_backend = cutout_product(original, cutout_model, cutout_edge)
     scene, scene_backend = generate_scene(
         prompt.strip(), _scene_size(original), str(payload.get("sceneModel", os.getenv("STAGING_SCENE_MODEL", "stabilityai/sd-turbo"))),
         str(payload.get("device", "auto")), seed,

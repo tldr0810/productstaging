@@ -32,6 +32,11 @@ The template is designed to be extended and reshaped; these are the load-bearing
 - After a successful deploy, a valid `POST /api/stage` should return
   `sceneBackend: cloudflare-workers-ai:sdxl`. `browser-scene-fallback` indicates degraded
   browser-only mode.
+- Cloudflare Workers cannot run Python/ONNX `rembg`; high-quality cutout requires the
+  authenticated `stage_server.py` service behind `STAGING_BACKEND_URL`. Its default model
+  is `birefnet-general` with `STAGING_CUTOUT_EDGE=preserve`, and the process caches one
+  rembg session per model. `decontaminate`, `alpha_matting`, and `vitmatte` are explicit
+  edge-quality opt-ins because they cost more or may alter edge RGB values.
 - After a Workers Build, hard-refresh the public page when checking the new client bundle;
   also verify `/api/health` before reporting the deployment complete.
 

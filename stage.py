@@ -14,7 +14,9 @@ import io
 import os
 import random
 import sys
+from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 
@@ -24,7 +26,10 @@ except ImportError as exc:  # pragma: no cover - reported by the CLI
     raise SystemExit("numpy is required; run `pip install -r requirements.txt`") from exc
 
 
+DEFAULT_CUTOUT_MODEL = os.getenv("STAGING_CUTOUT_MODEL", "birefnet-general")
+DEFAULT_CUTOUT_EDGE = os.getenv("STAGING_CUTOUT_EDGE", "preserve")
 DEFAULT_SCENE_MODEL = os.getenv("STAGING_SCENE_MODEL", "stabilityai/sd-turbo")
+CUTOUT_EDGE_MODES = ("preserve", "decontaminate", "alpha_matting", "vitmatte")
 
 
 def _png_bytes(image: Image.Image) -> bytes:
@@ -66,29 +71,85 @@ def _fallback_mask(image: Image.Image) -> Image.Image:
     return alpha
 
 
-def cutout_product(image: Image.Image, model: str = "u2net") -> tuple[Image.Image, Image.Image, str]:
+@lru_cache(maxsize=8)
+def _rembg_session(model: str) -> Any:
+    """Load one rembg/ONNX session per model and reuse it across requests."""
+    from rembg import new_session  # type: ignore
+
+    return new_session(model)
+
+
+def _rembg_cutout(original: Image.Image, model: str, edge_mode: str) -> tuple[Image.Image, Image.Image]:
+    from rembg import remove  # type: ignore
+
+    session = _rembg_session(model)
+    source = _png_bytes(original)
+    if edge_mode == "preserve":
+        mask_bytes = remove(source, session=session, only_mask=True)
+        mask = Image.open(io.BytesIO(mask_bytes)).convert("L").resize(original.size, Image.Resampling.LANCZOS)
+        cutout = original.copy()
+        cutout.putalpha(mask)
+        return cutout, mask
+
+    options: dict[str, Any] = {"session": session}
+    if edge_mode == "decontaminate":
+        options["decontaminate"] = True
+    elif edge_mode == "alpha_matting":
+        options["alpha_matting"] = True
+    elif edge_mode == "vitmatte":
+        options["vitmatte"] = True
+    result = remove(source, **options)
+    processed = Image.open(io.BytesIO(result)).convert("RGBA").resize(original.size, Image.Resampling.LANCZOS)
+    mask = processed.getchannel("A")
+    # Alpha matting and ViTMatte improve coverage. Reapply source RGB so only
+    # the edge mode that explicitly decontaminates is allowed to change colour.
+    if edge_mode != "decontaminate":
+        cutout = original.copy()
+        cutout.putalpha(mask)
+    else:
+        cutout = processed
+    return cutout, mask
+
+
+def cutout_product(
+    image: Image.Image,
+    model: str = DEFAULT_CUTOUT_MODEL,
+    edge_mode: str = DEFAULT_CUTOUT_EDGE,
+) -> tuple[Image.Image, Image.Image, str]:
     """Return (RGBA cutout, binary mask, backend name).
 
     rembg is loaded lazily so the CLI remains runnable without ONNX/CUDA. The
-    original RGB data is reapplied after inference to guarantee product fidelity.
+    original RGB data is reapplied after inference unless the caller explicitly
+    chooses ``decontaminate`` for coloured edge-halo removal. A requested model
+    falls back to u2net before the deterministic simple-background mask.
     """
     original = image.convert("RGBA")
-    try:
-        from rembg import new_session, remove  # type: ignore
+    if edge_mode not in CUTOUT_EDGE_MODES:
+        raise ValueError(f"cutout edge mode must be one of: {', '.join(CUTOUT_EDGE_MODES)}")
+    models = [model] if model == "u2net" else [model, "u2net"]
+    edge_attempts = [(candidate, edge_mode) for candidate in models]
+    if edge_mode != "preserve":
+        # Missing optional matting dependencies should not discard a usable
+        # model mask; retry the same model in strict RGB-preserving mode.
+        edge_attempts = [(model, edge_mode), (model, "preserve")]
+        if model != "u2net":
+            edge_attempts.extend([("u2net", edge_mode), ("u2net", "preserve")])
+    errors: list[str] = []
+    for candidate, candidate_edge in edge_attempts:
+        try:
+            cutout, mask = _rembg_cutout(original, candidate, candidate_edge)
+            backend = f"rembg:{candidate}:{candidate_edge}"
+            return cutout, mask.point(lambda value: 255 if value >= 128 else 0, mode="L"), backend
+        except Exception as exc:  # noqa: BLE001 - model availability is optional
+            errors.append(f"{candidate}/{candidate_edge}: {exc}")
 
-        session = new_session(model)
-        source = _png_bytes(original)
-        mask_bytes = remove(source, session=session, only_mask=True)
-        mask = Image.open(io.BytesIO(mask_bytes)).convert("L").resize(original.size, Image.Resampling.LANCZOS)
-        backend = f"rembg:{model}"
-    except Exception as exc:  # noqa: BLE001 - model availability is optional
-        print(f"warning: rembg unavailable ({exc}); using simple-background mask", file=sys.stderr)
-        mask = _fallback_mask(original)
-        backend = "fallback-mask"
-
-    binary = mask.point(lambda value: 255 if value >= 128 else 0, mode="L")
+    print(f"warning: rembg unavailable ({'; '.join(errors)}); using simple-background mask", file=sys.stderr)
+    mask = _fallback_mask(original)
     cutout = original.copy()
     cutout.putalpha(mask)
+    backend = "fallback-mask"
+
+    binary = mask.point(lambda value: 255 if value >= 128 else 0, mode="L")
     return cutout, binary, backend
 
 
@@ -298,13 +359,13 @@ def comparison_image(original: Image.Image, staged: Image.Image) -> Image.Image:
     return board
 
 
-def stage(input_path: Path, prompt: str, output_path: Path, cutout_model: str = "u2net",
+def stage(input_path: Path, prompt: str, output_path: Path, cutout_model: str = DEFAULT_CUTOUT_MODEL,
           scene_model: str = DEFAULT_SCENE_MODEL, device: str = "auto", seed: int = 7,
-          product_scale: float = 0.52) -> dict[str, Path | str]:
+          product_scale: float = 0.52, cutout_edge: str = DEFAULT_CUTOUT_EDGE) -> dict[str, Path | str]:
     if input_path.resolve() == output_path.resolve():
         raise ValueError("output path must differ from input path so the source photo is preserved")
     original = Image.open(input_path).convert("RGBA")
-    cutout, binary_mask, cutout_backend = cutout_product(original, cutout_model)
+    cutout, binary_mask, cutout_backend = cutout_product(original, cutout_model, cutout_edge)
     scene, scene_backend = generate_scene(prompt, _scene_size(original), scene_model, device, seed)
     staged = composite_product(scene, cutout, binary_mask, prompt, product_scale)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -326,7 +387,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input", required=True, type=Path, help="Product photo (PNG/JPEG/WebP).")
     parser.add_argument("--prompt", required=True, help="Scene description, e.g. 'on a marble kitchen counter'.")
     parser.add_argument("--output", required=True, type=Path, help="Staged output PNG path.")
-    parser.add_argument("--cutout-model", default="u2net", help="rembg model name (default: u2net).")
+    parser.add_argument("--cutout-model", default=DEFAULT_CUTOUT_MODEL,
+                        help=f"rembg model name (default: {DEFAULT_CUTOUT_MODEL}).")
+    parser.add_argument("--cutout-edge", choices=CUTOUT_EDGE_MODES, default=DEFAULT_CUTOUT_EDGE,
+                        help="edge handling: preserve, decontaminate, alpha_matting, or vitmatte.")
     parser.add_argument("--scene-model", default=DEFAULT_SCENE_MODEL, help=f"diffusers model id (default: {DEFAULT_SCENE_MODEL}).")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--seed", type=int, default=7)
@@ -344,7 +408,7 @@ def main() -> int:
         return 2
     try:
         result = stage(args.input, args.prompt, args.output, args.cutout_model, args.scene_model,
-                       args.device, args.seed, args.product_scale)
+                       args.device, args.seed, args.product_scale, args.cutout_edge)
     except Exception as exc:  # noqa: BLE001 - friendly CLI boundary
         print(f"error: {exc}", file=sys.stderr)
         return 1

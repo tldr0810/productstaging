@@ -76,7 +76,14 @@ export default function StageView() {
       try {
         const next = await api<StageResult | SceneResponse>('/api/stage', {
           method: 'POST',
-          body: JSON.stringify({ image: encoded, filename: file.name, prompt: prompt.trim(), quality: cutoutQuality }),
+          body: JSON.stringify({
+            image: encoded,
+            filename: file.name,
+            prompt: prompt.trim(),
+            quality: cutoutQuality,
+            cutoutModel: cutoutQuality === 'high' ? 'birefnet-general' : 'birefnet-general-lite',
+            cutoutEdge: 'preserve',
+          }),
         });
         if ('scene' in next) {
           setResult(await stageInBrowser(file, prompt.trim(), next.scene, next.sceneBackend, cutoutQuality));
