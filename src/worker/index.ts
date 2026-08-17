@@ -37,6 +37,7 @@ import {
 import { getConversation, handleChatTurn, resetConversation } from './chat';
 
 const SERVICE = 'cloudflare-worker-starter';
+const BUILD_VERSION = '19954ca';
 
 const bytesToBase64 = (bytes: Uint8Array): string => {
   let binary = '';
@@ -112,7 +113,7 @@ app.onError((error, c) => {
 /* ───────── routes ───────── */
 
 app.get('/api/health', (c) =>
-  c.json({ status: 'ok', service: SERVICE, time: new Date().toISOString() }),
+  c.json({ status: 'ok', service: SERVICE, version: BUILD_VERSION, time: new Date().toISOString() }),
 );
 
 app.post('/api/stage', async (c) => {
