@@ -106,6 +106,26 @@ app.get('/api/health', (c) =>
   c.json({ status: 'ok', service: SERVICE, time: new Date().toISOString() }),
 );
 
+app.post('/api/stage', async (c) => {
+  const backend = (c.env.STAGING_BACKEND_URL ?? '').trim().replace(/\/$/, '');
+  if (!backend) {
+    throw new HttpError(503, 'staging_unavailable', 'The Python staging service is not configured yet.');
+  }
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || typeof (body as { image?: unknown }).image !== 'string' || typeof (body as { prompt?: unknown }).prompt !== 'string') {
+    throw new HttpError(400, 'bad_request', 'Body must include base64 "image" and string "prompt" fields.');
+  }
+  const response = await fetch(`${backend}/stage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new HttpError(502, 'staging_backend_error', 'The staging service could not process this image.');
+  }
+  return c.json(await response.json());
+});
+
 app.get('/api/state', async (c) => {
   const [session, agents] = await Promise.all([
     getConnectSession(c.env),

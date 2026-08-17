@@ -5,6 +5,13 @@ the product RGB pixels out of the generation step. It is a Python CLI that can
 run entirely on a CPU with its deterministic local fallback, or use open-source
 models when their optional dependencies are installed.
 
+The deployed Worker also includes a small browser UI: open the Worker URL, pick
+an image, choose a Kitchen/Desk/Outdoor/Studio preset (or write your own prompt),
+and click **Generate staged photo**. The browser fallback works without any
+backend service. When `STAGING_BACKEND_URL` is configured, the same UI proxies to
+the Python service for rembg/diffusers output and falls back locally if it is
+unavailable.
+
 ```bash
 python stage.py --input product.png \
   --prompt "product on a rustic wooden table, soft morning light, shallow depth of field" \
@@ -58,6 +65,19 @@ Three deterministic demo pairs are committed in [`examples/`](examples/):
 They use the local fallback so they are reproducible without downloading model
 weights. To produce higher-quality scenes, rerun the same commands after
 installing the optional backends.
+
+### Optional Python HTTP service
+
+`stage_server.py` is a small JSON HTTP adapter for the same pipeline. It is
+intended for a private VM or a service with its own authentication:
+
+```bash
+PORT=8787 python stage_server.py
+```
+
+Set `STAGING_BACKEND_URL` in the Worker environment to that service's base URL.
+Do not expose an unauthenticated production instance; the browser fallback is
+the safe zero-configuration path.
 
 ## Known limitations
 

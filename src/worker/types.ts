@@ -17,6 +17,8 @@ export interface Env {
   CONFIG_ENCRYPTION_KEY?: string;
   /** Optional: when set, all routes except /api/health and /api/state require x-admin-password. */
   ADMIN_PASSWORD?: string;
+  /** Public URL of the Python staging service, ending before /stage. */
+  STAGING_BACKEND_URL?: string;
 }
 
 /** Everything needed to talk to one agent over A2A. */
