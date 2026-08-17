@@ -7,11 +7,11 @@ export interface LocalStageResult {
   sceneBackend: string;
 }
 
-const loadImage = (file: File): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
+const loadImage = (source: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
   const image = new Image();
   image.onload = () => resolve(image);
   image.onerror = () => reject(new Error('Could not decode the image.'));
-  image.src = URL.createObjectURL(file);
+  image.src = source;
 });
 
 const canvas = (width: number, height: number): HTMLCanvasElement => {
@@ -67,9 +67,10 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
   ctx.fillRect(0, 0, width, height);
 }
 
-export async function stageInBrowser(file: File, prompt: string): Promise<LocalStageResult> {
-  const image = await loadImage(file);
-  URL.revokeObjectURL(image.src);
+export async function stageInBrowser(file: File, prompt: string, sceneBase64?: string, sceneBackend = 'browser-scene-fallback'): Promise<LocalStageResult> {
+  const productUrl = URL.createObjectURL(file);
+  const image = await loadImage(productUrl);
+  URL.revokeObjectURL(productUrl);
   const scale = Math.min(1, 1024 / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(512, Math.round(image.naturalWidth * scale));
   const height = Math.max(512, Math.round(image.naturalHeight * scale));
@@ -113,7 +114,12 @@ export async function stageInBrowser(file: File, prompt: string): Promise<LocalS
 
   const staged = canvas(width, height);
   const stagedContext = staged.getContext('2d')!;
-  drawScene(stagedContext, width, height, prompt);
+  if (sceneBase64) {
+    const generatedScene = await loadImage(`data:image/png;base64,${sceneBase64}`);
+    stagedContext.drawImage(generatedScene, 0, 0, width, height);
+  } else {
+    drawScene(stagedContext, width, height, prompt);
+  }
   const productHeight = Math.round(height * 0.52);
   const productWidth = Math.round((right - left + 1) * productHeight / (bottom - top + 1));
   const x = Math.round((width - productWidth) / 2);
@@ -132,5 +138,5 @@ export async function stageInBrowser(file: File, prompt: string): Promise<LocalS
   comparisonContext.fillStyle = '#f4f2ee'; comparisonContext.fillRect(0, 0, width * 2, height + 54);
   comparisonContext.fillStyle = '#24262a'; comparisonContext.font = '12px system-ui'; comparisonContext.fillText('ORIGINAL', 18, 24); comparisonContext.fillText('STAGED', width + 18, 24);
   comparisonContext.drawImage(source, 0, 54); comparisonContext.drawImage(staged, width, 54);
-  return { staged: png(staged), cutout: png(cutout), mask: png(mask), comparison: png(comparison), cutoutBackend: 'browser-simple-mask', sceneBackend: 'browser-scene-fallback' };
+  return { staged: png(staged), cutout: png(cutout), mask: png(mask), comparison: png(comparison), cutoutBackend: 'browser-simple-mask', sceneBackend };
 }

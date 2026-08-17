@@ -38,6 +38,15 @@ import { getConversation, handleChatTurn, resetConversation } from './chat';
 
 const SERVICE = 'cloudflare-worker-starter';
 
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+};
+
 const app = new Hono<{ Bindings: Env }>();
 
 /* ───────── middleware ───────── */
@@ -109,7 +118,33 @@ app.get('/api/health', (c) =>
 app.post('/api/stage', async (c) => {
   const backend = (c.env.STAGING_BACKEND_URL ?? '').trim().replace(/\/$/, '');
   if (!backend) {
-    throw new HttpError(503, 'staging_unavailable', 'The Python staging service is not configured yet.');
+    const body = await c.req.json().catch(() => null) as { image?: unknown; prompt?: unknown } | null;
+    if (!body || typeof body.image !== 'string' || typeof body.prompt !== 'string' || !body.prompt.trim()) {
+      throw new HttpError(400, 'bad_request', 'Body must include base64 "image" and string "prompt" fields.');
+    }
+    if (!c.env.AI) {
+      throw new HttpError(503, 'staging_unavailable', 'The AI background service is not available on this deployment.');
+    }
+    try {
+      const background = await c.env.AI.run('@cf/stabilityai/stable-diffusion-xl-base-1.0', {
+        prompt: `Empty lifestyle photography background for product staging: ${body.prompt.trim()}. Keep the foreground clear for an inserted product; no products, people, logos, labels, or text.`,
+        negative_prompt: 'product, object, person, text, logo, watermark, blurry, distorted, duplicate objects',
+        width: 512,
+        height: 512,
+        num_steps: 20,
+        guidance: 7,
+      });
+      const backgroundBytes = background instanceof Uint8Array
+        ? background
+        : new Uint8Array(await new Response(background as ReadableStream<Uint8Array>).arrayBuffer());
+      return c.json({
+        scene: bytesToBase64(backgroundBytes),
+        sceneBackend: 'cloudflare-workers-ai:sdxl',
+      });
+    } catch (error) {
+      console.error('workers_ai_stage_failed', error);
+      throw new HttpError(503, 'staging_unavailable', 'The AI background service could not generate a scene.');
+    }
   }
   const body = await c.req.json().catch(() => null);
   if (!body || typeof body !== 'object' || typeof (body as { image?: unknown }).image !== 'string' || typeof (body as { prompt?: unknown }).prompt !== 'string') {

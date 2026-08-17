@@ -11,6 +11,11 @@ interface StageResult {
   sceneBackend: string;
 }
 
+interface SceneResponse {
+  scene: string;
+  sceneBackend: string;
+}
+
 const PRESETS = {
   Kitchen: 'product on a marble kitchen counter, soft window light, realistic lifestyle photography',
   Desk: 'product on a warm walnut desk, soft morning light, shallow depth of field, realistic lifestyle photography',
@@ -68,11 +73,15 @@ export default function StageView() {
         reader.readAsDataURL(file);
       });
       try {
-        const next = await api<StageResult>('/api/stage', {
+        const next = await api<StageResult | SceneResponse>('/api/stage', {
           method: 'POST',
           body: JSON.stringify({ image: encoded, filename: file.name, prompt: prompt.trim() }),
         });
-        setResult(next);
+        if ('scene' in next) {
+          setResult(await stageInBrowser(file, prompt.trim(), next.scene, next.sceneBackend));
+        } else {
+          setResult(next);
+        }
       } catch (cause) {
         // A deployment without the optional Python service still works locally in the browser.
         const fallback = await stageInBrowser(file, prompt.trim());

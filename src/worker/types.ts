@@ -8,6 +8,8 @@ export interface Env {
   ASSETS: Fetcher;
   /** D1 database. The starter uses five tables; the rest is yours. */
   DB: D1Database;
+  /** Optional Cloudflare Workers AI binding used for prompt-aware backgrounds. */
+  AI?: Ai;
 
   /** Manyfold API base, e.g. https://api.manyfold.ai */
   MANYFOLD_API_BASE_URL?: string;
