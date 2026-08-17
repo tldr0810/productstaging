@@ -99,7 +99,10 @@ printf '%s\n' "$STAGING_TOKEN" | npx wrangler secret put STAGING_BACKEND_TOKEN
 npx wrangler secret put STAGING_BACKEND_URL
 ```
 
-不要把 Python 服务直接公开而不设置 `STAGING_AUTH_TOKEN`。部署后，结果下方必须显示 `Scene: diffusers:...`；如果显示 `browser-scene-fallback` 或 `fallback-scene`，就仍然不是高质量 AI 背景。
+不要把 Python 服务直接公开而不设置 `STAGING_AUTH_TOKEN`。线上 Worker 默认使用 Cloudflare
+Workers AI 的 SDXL 生成 prompt-aware 背景，部署后结果下方应显示
+`Scene: cloudflare-workers-ai:sdxl`。如果显示 `browser-scene-fallback` 或
+`fallback-scene`，表示当前退化为浏览器预览；配置 Python 服务后则会显示 `diffusers:...`。
 
 `sd-turbo` 适合快速预览但画质较低；上面的 SDXL 配置更适合成品，不过需要更多内存/GPU，CPU 生成会很慢。
 

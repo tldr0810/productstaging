@@ -23,9 +23,15 @@ The template is designed to be extended and reshaped; these are the load-bearing
 ### Product Staging deployment notes
 
 - The public Worker URL is `https://productstaging.zack11712.workers.dev`.
-- The browser MVP works without a Python service by using its local fallback. A Python
-  backend is optional and must be configured with `STAGING_BACKEND_URL` plus the matching
-  `STAGING_BACKEND_TOKEN` secret; never hardcode either value or expose it to the browser.
+- The Worker has an `AI` Workers AI binding and uses
+  `@cf/stabilityai/stable-diffusion-xl-base-1.0` for prompt-aware backgrounds by default.
+  The browser fallback is used only if the AI binding/model is unavailable. A Python
+  backend remains optional and must be configured with `STAGING_BACKEND_URL` plus the
+  matching `STAGING_BACKEND_TOKEN` secret; never hardcode either value or expose it to the
+  browser.
+- After a successful deploy, a valid `POST /api/stage` should return
+  `sceneBackend: cloudflare-workers-ai:sdxl`. `browser-scene-fallback` indicates degraded
+  browser-only mode.
 - After a Workers Build, hard-refresh the public page when checking the new client bundle;
   also verify `/api/health` before reporting the deployment complete.
 

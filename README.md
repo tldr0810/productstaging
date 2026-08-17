@@ -7,10 +7,11 @@ models when their optional dependencies are installed.
 
 The deployed Worker also includes a small browser UI: open the Worker URL, pick
 an image, choose a Kitchen/Desk/Outdoor/Studio preset (or write your own prompt),
-and click **Generate staged photo**. The browser fallback works without any
-backend service. When `STAGING_BACKEND_URL` is configured, the same UI proxies to
-the Python service for rembg/diffusers output and falls back locally if it is
-unavailable.
+and click **Generate staged photo**. The Worker uses its Cloudflare Workers AI
+`AI` binding and Stable Diffusion XL for prompt-aware backgrounds by default. If
+that binding is unavailable, the UI degrades to a browser-only scene preview.
+When `STAGING_BACKEND_URL` is configured, the same UI proxies to the optional
+Python service for rembg/diffusers output and falls back locally if it is unavailable.
 
 ```bash
 python stage.py --input product.png \
@@ -76,8 +77,9 @@ PORT=8787 python stage_server.py
 ```
 
 Set `STAGING_BACKEND_URL` in the Worker environment to that service's base URL.
-Do not expose an unauthenticated production instance; the browser fallback is
-the safe zero-configuration path.
+Do not expose an unauthenticated production instance. Workers AI is the
+zero-configuration production path; the browser fallback is intentionally lower
+quality and is only a degraded mode.
 
 For a public backend, set `STAGING_AUTH_TOKEN` on the Python service and store
 the same value as the Worker's `STAGING_BACKEND_TOKEN` secret. The Worker
