@@ -6,13 +6,28 @@ The template is designed to be extended and reshaped; these are the load-bearing
 ## How deployment works
 
 - **Workers Builds is the deploy path.** Every push to `main` runs `npm run build` and then
-  `npx wrangler deploy` on Cloudflare's side. CI (`.github/workflows/ci.yml`) only checks; it
-  never deploys and holds no credentials.
+  `npm run deploy` on Cloudflare's side. The Cloudflare Dashboard is already connected to
+  GitHub repository `tldr0810/productstaging`; production branch is `main`.
+- Do **not** add a GitHub Actions deploy workflow. Deployment is intentionally handled by
+  the existing Cloudflare Workers Builds integration; the GitHub connection used by this
+  workspace does not have permission to create workflow files.
+- Push application changes to `origin/main` after running the checks below. If a local branch
+  contains an unpushable `.github/workflows/deploy.yml` experiment, exclude that file/commit
+  and push the application changes from a clean checkout based on `origin/main`.
 - The build step is load-bearing: `wrangler deploy` deploys the output that
   `vite build` writes to `dist/` (via the Cloudflare Vite plugin's deploy-config redirect).
   Never deploy without building first, and never remove the `build` script.
 - After every push, verify the deployment: `GET /api/health` must return HTTP 200 JSON, or
   run `npm run smoke -- <url>`.
+
+### Product Staging deployment notes
+
+- The public Worker URL is `https://productstaging.zack11712.workers.dev`.
+- The browser MVP works without a Python service by using its local fallback. A Python
+  backend is optional and must be configured with `STAGING_BACKEND_URL` plus the matching
+  `STAGING_BACKEND_TOKEN` secret; never hardcode either value or expose it to the browser.
+- After a Workers Build, hard-refresh the public page when checking the new client bundle;
+  also verify `/api/health` before reporting the deployment complete.
 
 ## Invariants
 
