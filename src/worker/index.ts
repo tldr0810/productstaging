@@ -117,7 +117,12 @@ app.post('/api/stage', async (c) => {
   }
   const response = await fetch(`${backend}/stage`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(c.env.STAGING_BACKEND_TOKEN
+        ? { authorization: `Bearer ${c.env.STAGING_BACKEND_TOKEN}` }
+        : {}),
+    },
     body: JSON.stringify(body),
   });
   if (!response.ok) {

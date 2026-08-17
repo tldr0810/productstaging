@@ -95,7 +95,22 @@ def cutout_product(image: Image.Image, model: str = "u2net") -> tuple[Image.Imag
 def _scene_size(product: Image.Image, max_side: int = 1024) -> tuple[int, int]:
     width, height = product.size
     scale = min(1.0, max_side / max(width, height))
-    return max(512, int(width * scale)), max(512, int(height * scale))
+    # Diffusion pipelines require dimensions divisible by 8. Invalid aspect
+    # sizes otherwise throw and silently send the request to the fallback.
+    scaled_width = max(512, int(width * scale))
+    scaled_height = max(512, int(height * scale))
+    return (scaled_width // 8) * 8, (scaled_height // 8) * 8
+
+
+def _model_prompt(prompt: str) -> str:
+    """Turn the user's scene description into a background-only prompt."""
+    description = " ".join(prompt.split())
+    return (
+        "High-end commercial product photography background, empty foreground "
+        f"reserved for the photographed product, {description}. "
+        "Natural perspective, realistic materials, coherent soft lighting, "
+        "shallow depth of field, no extra product, no people, no text, no logo."
+    )
 
 
 def _prompt_kind(prompt: str) -> str:
@@ -175,8 +190,17 @@ def generate_scene(prompt: str, size: tuple[int, int], model_id: str = DEFAULT_S
         generator = torch.Generator(device=target).manual_seed(seed)
         pipe = AutoPipelineForText2Image.from_pretrained(model_id, torch_dtype=dtype)
         pipe = pipe.to(target)
-        result = pipe(prompt, width=size[0], height=size[1], num_inference_steps=4 if "turbo" in model_id.lower() else 25,
-                      guidance_scale=0.0 if "turbo" in model_id.lower() else 7.0, generator=generator)
+        is_turbo = "turbo" in model_id.lower()
+        options = {
+            "width": size[0],
+            "height": size[1],
+            "num_inference_steps": 4 if is_turbo else 30,
+            "guidance_scale": 0.0 if is_turbo else 7.0,
+            "generator": generator,
+        }
+        if not is_turbo:
+            options["negative_prompt"] = "blurry, low quality, duplicate product, extra objects, text, watermark"
+        result = pipe(_model_prompt(prompt), **options)
         return result.images[0].convert("RGB"), f"diffusers:{model_id}"
     except Exception as exc:  # noqa: BLE001 - optional heavyweight backend
         print(f"warning: scene model unavailable ({exc}); using local textured scene", file=sys.stderr)

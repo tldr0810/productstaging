@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import hmac
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -16,6 +17,7 @@ from stage import composite_product, comparison_image, cutout_product, generate_
 
 
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
+STAGING_AUTH_TOKEN = os.getenv("STAGING_AUTH_TOKEN", "").strip()
 
 
 def encode_png(image: Image.Image) -> str:
@@ -60,6 +62,14 @@ def run_stage(payload: dict[str, Any]) -> dict[str, Any]:
 class StageHandler(BaseHTTPRequestHandler):
     server_version = "ProductStaging/0.1"
 
+    def authorized(self) -> bool:
+        """Require a shared bearer token when this service is deployed publicly."""
+        if not STAGING_AUTH_TOKEN:
+            return True
+        supplied = self.headers.get("Authorization", "")
+        expected = f"Bearer {STAGING_AUTH_TOKEN}"
+        return hmac.compare_digest(supplied, expected)
+
     def send_json(self, status: int, body: dict[str, Any]) -> None:
         encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
@@ -85,6 +95,9 @@ class StageHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         if self.path != "/stage":
             self.send_json(404, {"error": "not_found"})
+            return
+        if not self.authorized():
+            self.send_json(401, {"error": "unauthorized"})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))

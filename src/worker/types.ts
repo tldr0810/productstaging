@@ -19,6 +19,8 @@ export interface Env {
   ADMIN_PASSWORD?: string;
   /** Public URL of the Python staging service, ending before /stage. */
   STAGING_BACKEND_URL?: string;
+  /** Secret shared only between the Worker and the Python staging service. */
+  STAGING_BACKEND_TOKEN?: string;
 }
 
 /** Everything needed to talk to one agent over A2A. */

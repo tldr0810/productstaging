@@ -79,6 +79,30 @@ cp .dev.vars.example .dev.vars   # 然后取消注释 MANYFOLD_API_BASE_URL / EN
 npm run dev
 ```
 
+### 产品场景生成服务
+
+浏览器 fallback 只会画出固定的渐变和线条，不会理解完整 prompt。要生成真正符合描述的背景，需要单独启动 Python 服务，并安装可选模型：
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install "rembg[cpu]" diffusers transformers accelerate torch
+STAGING_TOKEN="$(openssl rand -hex 32)"
+STAGING_AUTH_TOKEN="$STAGING_TOKEN" STAGING_SCENE_MODEL="stabilityai/stable-diffusion-xl-base-1.0" PORT=8787 python stage_server.py
+```
+
+把同一个 token 写入 Cloudflare Worker secret，并把服务的 HTTPS URL 写入 Worker variable：
+
+```bash
+printf '%s\n' "$STAGING_TOKEN" | npx wrangler secret put STAGING_BACKEND_TOKEN
+npx wrangler secret put STAGING_BACKEND_URL
+```
+
+不要把 Python 服务直接公开而不设置 `STAGING_AUTH_TOKEN`。部署后，结果下方必须显示 `Scene: diffusers:...`；如果显示 `browser-scene-fallback` 或 `fallback-scene`，就仍然不是高质量 AI 背景。
+
+`sd-turbo` 适合快速预览但画质较低；上面的 SDXL 配置更适合成品，不过需要更多内存/GPU，CPU 生成会很慢。
+
 一条命令启动全部：Vite 以 HMR 方式服务 React 应用，Worker 运行在 workerd 中并**自动模拟
 本地 D1 数据库** —— schema 在第一个请求时自动创建，永远不需要迁移步骤。
 

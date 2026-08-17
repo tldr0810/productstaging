@@ -79,6 +79,13 @@ Set `STAGING_BACKEND_URL` in the Worker environment to that service's base URL.
 Do not expose an unauthenticated production instance; the browser fallback is
 the safe zero-configuration path.
 
+For a public backend, set `STAGING_AUTH_TOKEN` on the Python service and store
+the same value as the Worker's `STAGING_BACKEND_TOKEN` secret. The Worker
+forwards it as a Bearer token; it is never sent to the browser. The default
+`sd-turbo` model is a fast preview path. For higher quality, set
+`STAGING_SCENE_MODEL=stabilityai/stable-diffusion-xl-base-1.0` on the Python
+service, with enough GPU memory for that model.
+
 ## Known limitations
 
 - The fallback mask is intended for white or simple backgrounds; use rembg (or
@@ -126,6 +133,11 @@ stack that already works.
   zero-migration schema, ~no magic. Add a route, a table, a component, ship.
 
 ## Deploying
+
+This repository includes [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml),
+which deploys every push to `main`. Add a GitHub repository secret named
+`CLOUDFLARE_API_TOKEN` with Workers deploy permissions under **Settings → Secrets and
+variables → Actions**. The workflow builds first, then runs `wrangler deploy`.
 
 ### Path A — Deploy to Cloudflare button (recommended)
 

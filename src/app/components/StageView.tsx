@@ -77,9 +77,9 @@ export default function StageView() {
         // A deployment without the optional Python service still works locally in the browser.
         const fallback = await stageInBrowser(file, prompt.trim());
         setResult(fallback);
-        if (!(cause instanceof Error && 'status' in cause && (cause as { status?: number }).status === 503)) {
-          setError('Python service unavailable; used the browser fallback.');
-        }
+        setError(cause instanceof Error
+          ? `${cause.message} The result below is only a browser preview.`
+          : 'The AI staging service is unavailable. The result below is only a browser preview.');
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -141,9 +141,22 @@ export default function StageView() {
         {result && (
           <>
             <div className="result-heading">
-              <div><p className="eyebrow">RESULT</p><h2>Ready to share</h2></div>
+              <div>
+                <p className="eyebrow">RESULT</p>
+                <h2>{result.sceneBackend === 'browser-scene-fallback' ? 'Preview only' : 'Ready to share'}</h2>
+              </div>
               <a className="button primary" href={dataUrl(result.staged)} download="staged-product.png">Download PNG</a>
             </div>
+            {result.sceneBackend === 'browser-scene-fallback' && (
+              <div className="notice warning">
+                Browser preview only: your prompt is reduced to a basic scene category. Connect the Python AI service for prompt-aware backgrounds.
+              </div>
+            )}
+            {result.sceneBackend === 'fallback-scene' && (
+              <div className="notice warning">
+                Python service is connected, but its diffusion model is unavailable. This background is still a procedural fallback.
+              </div>
+            )}
             <img className="result-hero" src={dataUrl(result.staged)} alt="Staged product" />
             <div className="result-grid">
               <ResultCard label="Before / after" source={dataUrl(result.comparison)} download="comparison.png" />

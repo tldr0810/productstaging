@@ -19,3 +19,7 @@
 # Set this (>=32 chars) to keep the key out of the database:
 #   npx wrangler secret put CONFIG_ENCRYPTION_KEY
 # CONFIG_ENCRYPTION_KEY=
+
+# Python staging service. The token must match STAGING_AUTH_TOKEN on that service.
+# STAGING_BACKEND_URL=https://your-private-staging-service.example
+# STAGING_BACKEND_TOKEN=

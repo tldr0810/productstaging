@@ -156,6 +156,11 @@ body {
   color: var(--danger);
 }
 
+.notice.warning {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--warn);
+}
+
 /* ── buttons & inputs ── */
 
 .button {
