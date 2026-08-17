@@ -57,6 +57,16 @@ anti-aliased edge ring are applied during compositing. A blurred contact shadow
 is placed behind the product and its direction is inferred from simple prompt
 words such as `left`, `morning`, or `sunset`.
 
+### Controlling cutout quality
+
+The web UI's **High detail** mode keeps up to 2048px while building the mask and
+applies only a small alpha feather; it does not rewrite product RGB pixels. Use
+**Balanced** or **Fast preview** on phones or very large uploads. These browser
+modes are still intended for clean white/simple backgrounds. For difficult edges,
+run the Python service with `rembg` and choose a stronger model, for example
+`STAGING_CUTOUT_MODEL=birefnet-general` (or pass `--cutout-model birefnet-general`
+to the CLI). The returned `Cutout:` backend label tells you which path actually ran.
+
 Three deterministic demo pairs are committed in [`examples/`](examples/):
 
 - `mug.comparison.png` — warm wooden desk

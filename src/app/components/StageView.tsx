@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-import { stageInBrowser } from '../localStage';
+import { stageInBrowser, type CutoutQuality } from '../localStage';
 
 interface StageResult {
   staged: string;
@@ -28,6 +28,7 @@ const dataUrl = (value: string): string => `data:image/png;base64,${value}`;
 export default function StageView() {
   const [file, setFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState(PRESETS.Kitchen);
+  const [cutoutQuality, setCutoutQuality] = useState<CutoutQuality>('high');
   const [preview, setPreview] = useState('');
   const [result, setResult] = useState<StageResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -75,16 +76,16 @@ export default function StageView() {
       try {
         const next = await api<StageResult | SceneResponse>('/api/stage', {
           method: 'POST',
-          body: JSON.stringify({ image: encoded, filename: file.name, prompt: prompt.trim() }),
+          body: JSON.stringify({ image: encoded, filename: file.name, prompt: prompt.trim(), quality: cutoutQuality }),
         });
         if ('scene' in next) {
-          setResult(await stageInBrowser(file, prompt.trim(), next.scene, next.sceneBackend));
+          setResult(await stageInBrowser(file, prompt.trim(), next.scene, next.sceneBackend, cutoutQuality));
         } else {
           setResult(next);
         }
       } catch (cause) {
         // A deployment without the optional Python service still works locally in the browser.
-        const fallback = await stageInBrowser(file, prompt.trim());
+        const fallback = await stageInBrowser(file, prompt.trim(), undefined, 'browser-scene-fallback', cutoutQuality);
         setResult(fallback);
         setError(cause instanceof Error
           ? `${cause.message} The result below is only a browser preview.`
@@ -137,6 +138,13 @@ export default function StageView() {
             </button>
           ))}
         </div>
+        <label className="field-label" htmlFor="cutout-quality">Cutout quality</label>
+        <select id="cutout-quality" value={cutoutQuality} onChange={(event) => setCutoutQuality(event.target.value as CutoutQuality)}>
+          <option value="high">High detail (slower)</option>
+          <option value="balanced">Balanced</option>
+          <option value="fast">Fast preview</option>
+        </select>
+        <p className="muted small stage-note">High detail keeps up to 2048px for cleaner edges. Use a plain background for the best mask.</p>
         {error && <div className="notice error">{error}</div>}
         <button className="button primary stage-button" type="button" onClick={() => void stage()} disabled={!file || !prompt.trim() || busy}>
           {busy ? 'Staging…' : 'Generate staged photo'}
@@ -158,7 +166,7 @@ export default function StageView() {
             </div>
             {result.sceneBackend === 'browser-scene-fallback' && (
               <div className="notice warning">
-                Browser preview only: your prompt is reduced to a basic scene category. Connect the Python AI service for prompt-aware backgrounds.
+                The AI background service is unavailable, so this result is a browser preview only. The cutout quality setting still applies.
               </div>
             )}
             {result.sceneBackend === 'fallback-scene' && (

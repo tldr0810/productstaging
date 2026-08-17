@@ -37,13 +37,18 @@ def run_stage(payload: dict[str, Any]) -> dict[str, Any]:
     if len(raw) > MAX_IMAGE_BYTES:
         raise ValueError("image is too large; maximum is 12 MB")
     original = Image.open(BytesIO(raw)).convert("RGBA")
-    if max(original.size) > 4096:
-        original.thumbnail((4096, 4096), Image.Resampling.LANCZOS)
+    quality = str(payload.get("quality", "high"))
+    max_input_side = {"high": 4096, "balanced": 2048, "fast": 1024}.get(quality)
+    if max_input_side is None:
+        raise ValueError("quality must be high, balanced, or fast")
+    if max(original.size) > max_input_side:
+        original.thumbnail((max_input_side, max_input_side), Image.Resampling.LANCZOS)
     seed = int(payload.get("seed", 7))
     scale = float(payload.get("productScale", 0.52))
     if not 0.1 <= scale <= 1.0:
         raise ValueError("productScale must be between 0.1 and 1.0")
-    cutout, binary_mask, cutout_backend = cutout_product(original, str(payload.get("cutoutModel", "u2net")))
+    cutout_model = str(payload.get("cutoutModel", os.getenv("STAGING_CUTOUT_MODEL", "u2net")))
+    cutout, binary_mask, cutout_backend = cutout_product(original, cutout_model)
     scene, scene_backend = generate_scene(
         prompt.strip(), _scene_size(original), str(payload.get("sceneModel", os.getenv("STAGING_SCENE_MODEL", "stabilityai/sd-turbo"))),
         str(payload.get("device", "auto")), seed,

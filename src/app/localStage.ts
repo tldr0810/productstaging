@@ -7,6 +7,14 @@ export interface LocalStageResult {
   sceneBackend: string;
 }
 
+export type CutoutQuality = 'high' | 'balanced' | 'fast';
+
+const CUTOUT_QUALITY: Record<CutoutQuality, { maxDimension: number; tolerance: number; feather: number }> = {
+  high: { maxDimension: 2048, tolerance: 42, feather: 0.8 },
+  balanced: { maxDimension: 1536, tolerance: 36, feather: 0.65 },
+  fast: { maxDimension: 1024, tolerance: 30, feather: 0.5 },
+};
+
 const loadImage = (source: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
   const image = new Image();
   image.onload = () => resolve(image);
@@ -67,11 +75,18 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
   ctx.fillRect(0, 0, width, height);
 }
 
-export async function stageInBrowser(file: File, prompt: string, sceneBase64?: string, sceneBackend = 'browser-scene-fallback'): Promise<LocalStageResult> {
+export async function stageInBrowser(
+  file: File,
+  prompt: string,
+  sceneBase64?: string,
+  sceneBackend = 'browser-scene-fallback',
+  quality: CutoutQuality = 'high',
+): Promise<LocalStageResult> {
   const productUrl = URL.createObjectURL(file);
   const image = await loadImage(productUrl);
   URL.revokeObjectURL(productUrl);
-  const scale = Math.min(1, 1024 / Math.max(image.naturalWidth, image.naturalHeight));
+  const qualityConfig = CUTOUT_QUALITY[quality];
+  const scale = Math.min(1, qualityConfig.maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(512, Math.round(image.naturalWidth * scale));
   const height = Math.max(512, Math.round(image.naturalHeight * scale));
   const source = canvas(width, height);
@@ -85,32 +100,78 @@ export async function stageInBrowser(file: File, prompt: string, sceneBase64?: s
   for (let y = 0; y < height; y += Math.max(1, Math.floor(height / 32))) {
     sample.push(y * width * 4, y * width * 4 + (width - 1) * 4);
   }
-  const background = [0, 1, 2].map((channel) => sample.reduce((sum, index) => sum + pixels.data[index + channel], 0) / sample.length);
-  const alpha = new Uint8ClampedArray(width * height);
+  const background = [0, 1, 2].map((channel) => {
+    const values = sample.map((index) => pixels.data[index + channel]).sort((a, b) => a - b);
+    return values[Math.floor(values.length / 2)];
+  });
+  const candidate = new Uint8Array(width * height);
+  const connectedBackground = new Uint8Array(width * height);
+  const queue = new Int32Array(width * height);
+  let queueStart = 0;
+  let queueEnd = 0;
+  const isCandidate = (index: number): boolean => {
+    const pixel = index * 4;
+    const distance = Math.hypot(
+      pixels.data[pixel] - background[0],
+      pixels.data[pixel + 1] - background[1],
+      pixels.data[pixel + 2] - background[2],
+    );
+    const brightness = (pixels.data[pixel] + pixels.data[pixel + 1] + pixels.data[pixel + 2]) / 3;
+    const saturation = Math.max(pixels.data[pixel], pixels.data[pixel + 1], pixels.data[pixel + 2])
+      - Math.min(pixels.data[pixel], pixels.data[pixel + 1], pixels.data[pixel + 2]);
+    return distance <= qualityConfig.tolerance || (brightness > 242 && saturation < 20);
+  };
+  for (let index = 0; index < width * height; index++) candidate[index] = isCandidate(index) ? 1 : 0;
+  const enqueue = (index: number) => {
+    if (candidate[index] && !connectedBackground[index]) {
+      connectedBackground[index] = 1;
+      queue[queueEnd++] = index;
+    }
+  };
+  for (let x = 0; x < width; x++) { enqueue(x); enqueue((height - 1) * width + x); }
+  for (let y = 1; y < height - 1; y++) { enqueue(y * width); enqueue(y * width + width - 1); }
+  while (queueStart < queueEnd) {
+    const index = queue[queueStart++];
+    const x = index % width;
+    if (x > 0) enqueue(index - 1);
+    if (x + 1 < width) enqueue(index + 1);
+    if (index >= width) enqueue(index - width);
+    if (index + width < width * height) enqueue(index + width);
+  }
+
+  const binaryAlpha = new Uint8ClampedArray(width * height);
   let left = width, top = height, right = 0, bottom = 0;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const index = (y * width + x) * 4;
-      const distance = Math.hypot(pixels.data[index] - background[0], pixels.data[index + 1] - background[1], pixels.data[index + 2] - background[2]);
-      const brightness = (pixels.data[index] + pixels.data[index + 1] + pixels.data[index + 2]) / 3;
-      const saturation = Math.max(pixels.data[index], pixels.data[index + 1], pixels.data[index + 2]) - Math.min(pixels.data[index], pixels.data[index + 1], pixels.data[index + 2]);
-      const foreground = distance > 30 || brightness < 235 || saturation > 30;
-      alpha[y * width + x] = foreground ? 255 : 0;
+      const index = y * width + x;
+      const foreground = !connectedBackground[index];
+      binaryAlpha[index] = foreground ? 255 : 0;
       if (foreground) { left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y); }
     }
   }
   if (right <= left || bottom <= top) throw new Error('No foreground detected. Try a product photo with a simple background.');
+
+  const mask = canvas(width, height);
+  const maskContext = mask.getContext('2d')!;
+  const maskPixels = maskContext.createImageData(width, height);
+  for (let i = 0; i < binaryAlpha.length; i++) maskPixels.data.set([binaryAlpha[i], binaryAlpha[i], binaryAlpha[i], 255], i * 4);
+  maskContext.putImageData(maskPixels, 0, 0);
+  const alphaSource = canvas(width, height);
+  const alphaSourceContext = alphaSource.getContext('2d')!;
+  const alphaSourcePixels = alphaSourceContext.createImageData(width, height);
+  for (let i = 0; i < binaryAlpha.length; i++) alphaSourcePixels.data.set([255, 255, 255, binaryAlpha[i]], i * 4);
+  alphaSourceContext.putImageData(alphaSourcePixels, 0, 0);
+  const softenedMask = canvas(width, height);
+  const softenedContext = softenedMask.getContext('2d')!;
+  softenedContext.filter = `blur(${qualityConfig.feather}px)`;
+  softenedContext.drawImage(alphaSource, 0, 0);
+  const softAlpha = softenedContext.getImageData(0, 0, width, height).data;
   const cutout = canvas(width, height);
   const cutoutContext = cutout.getContext('2d')!;
   const cutoutPixels = cutoutContext.createImageData(pixels);
   cutoutPixels.data.set(pixels.data);
-  for (let i = 0; i < alpha.length; i++) cutoutPixels.data[i * 4 + 3] = alpha[i];
+  for (let i = 0; i < binaryAlpha.length; i++) cutoutPixels.data[i * 4 + 3] = softAlpha[i * 4];
   cutoutContext.putImageData(cutoutPixels, 0, 0);
-  const mask = canvas(width, height);
-  const maskContext = mask.getContext('2d')!;
-  const maskPixels = maskContext.createImageData(width, height);
-  for (let i = 0; i < alpha.length; i++) maskPixels.data.set([alpha[i], alpha[i], alpha[i], 255], i * 4);
-  maskContext.putImageData(maskPixels, 0, 0);
 
   const staged = canvas(width, height);
   const stagedContext = staged.getContext('2d')!;

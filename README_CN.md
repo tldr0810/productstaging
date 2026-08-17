@@ -106,6 +106,11 @@ Workers AI 的 SDXL 生成 prompt-aware 背景，部署后结果下方应显示
 
 `sd-turbo` 适合快速预览但画质较低；上面的 SDXL 配置更适合成品，不过需要更多内存/GPU，CPU 生成会很慢。
 
+网页上的去背质量可以选择 High detail、Balanced 或 Fast preview。High detail
+最多保留 2048px，并只对 alpha 边缘做轻微羽化，不会重绘商品 RGB。复杂边缘请使用
+Python 服务的 `rembg`，并设置 `STAGING_CUTOUT_MODEL=birefnet-general`（CLI 也可传入
+`--cutout-model birefnet-general`）。结果下方的 `Cutout:` 会显示实际使用的去背路径。
+
 一条命令启动全部：Vite 以 HMR 方式服务 React 应用，Worker 运行在 workerd 中并**自动模拟
 本地 D1 数据库** —— schema 在第一个请求时自动创建，永远不需要迁移步骤。
 
